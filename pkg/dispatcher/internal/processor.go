@@ -787,7 +787,8 @@ func (p *mcpProcessor) processOauthDiscoveryCommand(ctx context.Context, logger 
 		ctx = oauth.ContextWithForwardRequestID(ctx, p.mcpServerURL)
 	}
 
-	candidates, _, err := oauth.BuildOAuthDiscoveryCandidates(ctx, p.oauthHTTPClient, p.mcpServerURL, logger, p.oauthOrigins...)
+	client := oauth.WithSessionHeader(p.oauthHTTPClient, p.mcpServerURL, cmd.Headers().Get("X-OMA-Session-ID"))
+	candidates, _, err := oauth.BuildOAuthDiscoveryCandidates(ctx, client, p.mcpServerURL, logger, p.oauthOrigins...)
 	if err != nil {
 		return err
 	}
@@ -795,7 +796,7 @@ func (p *mcpProcessor) processOauthDiscoveryCommand(ctx context.Context, logger 
 		return fmt.Errorf("dispatcher processor: missing OAuth metadata URLs")
 	}
 
-	resp, sourceURL, _, err := oauth.FetchOAuthMetadata(ctx, p.oauthHTTPClient, candidates, logger)
+	resp, sourceURL, _, err := oauth.FetchOAuthMetadata(ctx, client, candidates, logger)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to fetch OAuth discovery ProtectedResourceMetaData", slog.String("error", err.Error()))
 		return err
@@ -807,7 +808,7 @@ func (p *mcpProcessor) processOauthDiscoveryCommand(ctx context.Context, logger 
 	if p.hostBus != nil {
 		bundle, _, bundleErr := oauth.BuildURLBundleFromPRMDWithAuthServerMetadata(
 			ctx,
-			p.oauthHTTPClient,
+			client,
 			resp.Payload(),
 			time.Now(),
 			sourceURL,

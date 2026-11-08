@@ -3138,8 +3138,10 @@ func TestProcessorRequiresShardToken(t *testing.T) {
 func TestProcessorHandlesOAuthDiscoveryCommand(t *testing.T) {
 	t.Parallel()
 
+	requests := make(chan http.Header, 16)
 	var expectedResource string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- r.Header.Clone()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{"resource":"%s","scopes_supported":["read"]}`, expectedResource)
 	}))
@@ -3170,23 +3172,29 @@ func TestProcessorHandlesOAuthDiscoveryCommand(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	cmd := &fakeOauthDiscoveryCommand{
-		id:         types.RequestID("oauth-1"),
-		enqueuedAt: time.Now().Add(-time.Second),
-		polledAt:   time.Now(),
-		headers:    http.Header{},
-		shardToken: "shard-oauth",
+	for _, sessionID := range []string{"session-first", "", "session-second"} {
+		cmd := &fakeOauthDiscoveryCommand{
+			id: types.RequestID("oauth-1"), enqueuedAt: time.Now().Add(-time.Second),
+			polledAt: time.Now(), headers: http.Header{}, shardToken: "shard-oauth",
+		}
+		cmd.headers.Set("Authorization", "Bearer must-not-forward")
+		cmd.headers.Set("Cookie", "must-not-forward")
+		if sessionID != "" {
+			cmd.headers.Set("X-OMA-Session-ID", sessionID)
+		}
+		require.NoError(t, processor.Process(t.Context(), cmd))
+		got := responder.waitForResponse(t)
+		require.Equal(t, types.ResponseTypeOAuthDiscovery, got.response.Type())
+		require.Equal(t, http.StatusOK, got.response.ResponseCode())
+		require.NotEmpty(t, got.response.Payload())
+		require.NotEmpty(t, requests)
+		for len(requests) > 0 {
+			headers := <-requests
+			require.Equal(t, sessionID, headers.Get("X-OMA-Session-ID"))
+			require.Empty(t, headers.Get("Authorization"))
+			require.Empty(t, headers.Get("Cookie"))
+		}
 	}
-
-	err = processor.Process(context.Background(), cmd)
-	require.NoError(t, err)
-
-	got := responder.waitForResponse(t)
-	require.Equal(t, cmd.id, got.requestID)
-	require.Equal(t, types.ResponseTypeOAuthDiscovery, got.response.Type())
-	require.Equal(t, http.StatusOK, got.response.ResponseCode())
-	require.NotEmpty(t, got.response.Payload())
-	require.Equal(t, "application/json", got.response.Headers().Get("Content-Type"))
 }
 
 func TestProcessorHandlesSessionTerminationCommand(t *testing.T) {

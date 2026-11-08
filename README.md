@@ -65,6 +65,13 @@ then read the onboarding guide below.
   automatic forwarding.
   The same setting is available as `FORWARD_REQUEST_ID` or top-level YAML
   `forward_request_id`; see [request ID forwarding](docs/configuration.md#request-id-forwarding).
+- **Using OMA session correlation?** Queued OAuth discovery forwards the
+  `X-OMA-Session-ID` command header to the configured MCP origin, including
+  challenge probes and metadata fetches. It does not forward command credentials
+  or send the Session ID to other OAuth origins. Commands without this header
+  and startup discovery retain their existing behavior. This is correlation
+  metadata, not an authentication credential; the control plane must supply
+  the trusted value.
 - **Using a namespaced tunnel ID?** Preserve the full ID returned by the service.
   The client accepts legacy IDs and aliases with a four-character namespace;
   see [tunnel identifiers](docs/protocol.md#scope).
